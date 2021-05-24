@@ -1,0 +1,61 @@
+---
+title: "Evaluating Models"
+output: html_document
+authors: "Gabriel De La Rosa and Ruben Sanchez-Ramirez"
+---
+
+### By Gabriel De La Rosa and Ruben Sanchez-Ramirez
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(purrr)
+library(lubridate)
+```
+
+Our metric computes NSE for the flow sum through the lowest water months. This is useful when a manager is concerned with drought, and wants a model that performs accurately when predicting water levels when there is low water stress.
+
+```{r}
+sager = read.table("./sager.txt", header=T)
+sager = sager %>% mutate(date=make_date(year=year, month=month, day=day))
+
+
+# Read in table
+msage = read.table("./sagerm.txt", header=T)
+
+# lets say we know the start date from our earlier output
+msage$date = sager$date
+head(msage)
+msage$month = sager$month
+msage$year = sager$year
+msage$day = sager$day
+msage$wy = sager$wy
+
+# and we still have observed data from above
+# useful to combine by date to make sure that streamflow and observe match
+msage$obs = sager$obs
+
+# Source the function
+source("./low_water_check.R")
+source("./nse.R")
+# This function calculates the NSE for the lowest water months (aug, sep, oct), where our managers are most interested in drought risk for the watershed. 
+
+# Run it for every simulation
+low_water_res = msage %>% select(-date, -month, -day, -year, -wy, -obs ) %>% map_dbl(~low_water_check( o=msage$obs, month=msage$month, day=msage$day, year=msage$year, wy=msage$wy, m=.x))
+
+low_water_res
+
+# # add to our results
+simnames = names(msage %>% select(-date, -month, -day,-year,-wy, -obs))
+results = cbind.data.frame(simnames=simnames, low_water=low_water_res)
+
+# Find the best performing simulation
+max = max(low_water_res)
+best_perf <- results %>% 
+  filter(low_water == max)
+
+# graph range of performance measures
+resultsl = results %>% gather(key="metric",value="value", -simnames) %>% 
+  filter(metric == "low_water")
+ggplot(resultsl, aes(metric, value))+geom_boxplot()+facet_wrap(~metric, scales="free")
+```
